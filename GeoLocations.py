@@ -35,13 +35,20 @@ parser.add_argument("--pad", dest='printAddressData',
 	help="Print only the building info for building with the same "
 	     "address as the input. Overrides --pld",
 	action="store_true")
+parser.add_argument('--wp', dest='whitePages',
+	help="Get the data from the white pages server",
+	action="store_true")
+parser.add_argument('--debug', dest='debug', 
+	help="Set JSON from whitepages to use static file for testing",
+	action="store_true")
 
 args=parser.parse_args()
 
 
 #Variables for APIs
 url = 'https://maps.googleapis.com/maps/api/geocode/json?address='
-urlplaces = 'https://maps.googleapis.com/maps/api/place/details/json?'
+urlPlaces = 'https://maps.googleapis.com/maps/api/place/details/json?'
+urlWhitePages = "https://api.ekata.com/3.0/location?api_key=cffb32044ba94e209665f793595abe37"
 key = '&key=AIzaSyCgcV2R4KkxhqdnzXXMAbYA4VLEBQd7w-8'
 APIkey = 'AIzaSyCgcV2R4KkxhqdnzXXMAbYA4VLEBQd7w-8'
 
@@ -87,14 +94,6 @@ def get_street_info():
 	longitude = geoData['results'][0]['geometry']['location']['lng']
 	addressInfo = geoData['results'][0]['address_components']
 
-	#print("\nBens Code\n")
-	'''
-	for i in geoData['results'][0]['address_components']:
-		#if (i['types'][0] != "route" and i['types'][0] != "street_number"):
-		if i['short_name'] not in addressInfo:
-			addressInfo.append(i['short_name'])
-	'''
-
 	print("Lattitude: ", lattitude)
 	print("Longitude: ", longitude)
 
@@ -107,7 +106,7 @@ def get_street_info():
 	return {"lat": lattitude, "long": longitude, 
 		'id': place_id, 'addressInfo': addressInfo}
 
-
+#Get the data
 def get_nearby_data(info):
 	return search_places_by_coordinate(
 		",".join([str(addressData['lat']), str(addressData['long'])]), "50")
@@ -176,7 +175,70 @@ def print_address_data(aData, pData):
 
 	print_place_data(data)
 
-	
+def format_whitepages_input(data):
+    retVal = {}
+    x = [i['long_name'] for i in addressData['addressInfo'] if i['types'][0] == 'locality']
+    for z in data:
+        if 'street_number' in z['types']:
+            streetStr= z['short_name']
+        elif 'route' in z['types']:
+            streetStr+= "+" + z['short_name'].replace(" ", "+")
+        elif 'locality' in z['types']:
+            cityStr= z['long_name'].replace(" ", "+")
+        elif 'country' in z['types']:
+            countryStr = z['short_name']
+        elif 'postal_code' in z['types']:
+            postalStr = z['long_name'].replace(" ", "")
+        elif 'administrative_area_level_1' in z['types']:
+            provStr = z['short_name']
+
+    retVal['city'] = cityStr
+    retVal['country'] = countryStr
+    retVal['code'] = postalStr
+    retVal['prov'] = provStr
+    retVal['street']= streetStr
+    retVal['unit']= ""
+    print(retVal)
+    return retVal
+
+
+def get_whitepages_data(data):
+    params = {
+        'city': data['city'],
+        'country_code': data['country'],
+        'postal_code': data["code"],
+        'state_code': data["prov"],
+        'street_line_1': data['street'],
+        'street_line_2': data['unit']}
+    page = requests.get(urlWhitePages, params=params)
+    print(page)
+    return page.json()
+
+
+##placeholder data fill in from the other json##
+cityTest = {
+	'city': "Halifax",
+	'country': "CA",
+	'postal': "B3L+3G9",
+	'prov': "NS",
+	'street': "2529 Sherwood St",
+	'unit': ""
+}
+
+def print_whitepages_data(pageData):
+    print("Mailing Status:")
+    print("\nActive: ",pageData['is_active'])
+    print("Commericial: ",pageData['is_commercial'])
+    print("Forwarding Mail: ",pageData['is_forwarder'])
+    print("Delivery Type: ",pageData['delivery_point'])
+
+    print("\nPerson(s) associated with this Address:")
+    for person in pageData['current_residents']:
+        print("\nName: ", person["name"])
+        print("Age Range: ", person["age_range"])
+        print("Gender: ", person["gender"])
+        print("Resident Type: ", person["type"])
+        print("Phone Number: ", person["phones"][0]["phone_number"])
 
 #Runtime code
 addressData = get_street_info()
@@ -184,10 +246,15 @@ addressData = get_street_info()
 print_location_data(addressData, False)	
 addressTest = get_compare_address(addressData['addressInfo'])
 
-x = [i['long_name'] for i in addressData['addressInfo'] if i['types'][0] == 'postal_code']
-
-print(x)
-
+'''
+with open('addr.json') as f:
+    pageData = json.load(f)
+    #print(pageData)
+'''
+if args.whitePages:
+    wpInput = format_whitepages_input(addressData['addressInfo'])
+    pageData = get_whitepages_data(wpInput)
+    print_whitepages_data(pageData)	
 
 if args.localData:
 	placeData = get_nearby_data(addressData)
